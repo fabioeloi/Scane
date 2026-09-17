@@ -279,6 +279,16 @@ func creeateSaneLib(libName: String) throws {
 
 func embedLibs() throws {
 
+    let homebrewSane = URL(fileURLWithPath: "/opt/homebrew/opt/sane-backends")
+    let homebrewUSB = URL(fileURLWithPath: "/opt/homebrew/opt/libusb")
+    let systemSane = homebrewSane.appendingPathComponent("lib/libsane.1.dylib")
+    let systemUSB = homebrewUSB.appendingPathComponent("lib/libusb-1.0.0.dylib")
+
+    if fileMgr.fileExists(atPath: systemSane.path) && fileMgr.fileExists(atPath: systemUSB.path) {
+        try embedHomebrewRuntime(saneRoot: homebrewSane, usbRoot: homebrewUSB)
+        return
+    }
+
     print("Downloading and processing dependencies from homebrew...")
 
     // Set up a clean state
@@ -316,6 +326,54 @@ func embedLibs() throws {
     let destIncludeFolder = includeFolder
     try fileMgr.createDirectory(at: destIncludeFolder, withIntermediateDirectories: true)
     try run("rsync", "-rtvh", "\(srcIncludeFolder.path)/", "\(destIncludeFolder.path)/")
+}
+
+func embedHomebrewRuntime(saneRoot: URL, usbRoot: URL) throws {
+    print("Embedding installed Homebrew SANE runtime...")
+
+    try clearFolder(url: frameworksFolder)
+    try clearFolder(url: etcFolder)
+    try fileMgr.createDirectory(at: frameworksFolder.appendingPathComponent("sane"), withIntermediateDirectories: true)
+    try fileMgr.createDirectory(at: etcFolder, withIntermediateDirectories: true)
+
+    let saneLibrary = frameworksFolder.appendingPathComponent("libsane.dylib")
+    let usbLibrary = frameworksFolder.appendingPathComponent("libusb-1.0.dylib")
+    try fileMgr.copyItem(at: saneRoot.appendingPathComponent("lib/libsane.1.dylib"), to: saneLibrary)
+    try fileMgr.copyItem(at: usbRoot.appendingPathComponent("lib/libusb-1.0.0.dylib"), to: usbLibrary)
+
+    try run("install_name_tool", "-id", "@rpath/libsane.dylib", saneLibrary.path)
+    try run("install_name_tool", "-id", "@loader_path/libusb-1.0.dylib", usbLibrary.path)
+    try run("install_name_tool", "-change", usbRoot.appendingPathComponent("lib/libusb-1.0.0.dylib").path,
+            "@loader_path/libusb-1.0.dylib", saneLibrary.path)
+
+    let frameworkBinary = frameworksFolder
+        .deletingLastPathComponent()
+        .appendingPathComponent("SaneKit")
+    if fileMgr.fileExists(atPath: frameworkBinary.path) {
+        try run("install_name_tool", "-change", saneRoot.appendingPathComponent("lib/libsane.1.dylib").path,
+                "@loader_path/Frameworks/libsane.dylib", frameworkBinary.path)
+        try run("codesign", "--force", "--sign", "-", "--timestamp=none", frameworkBinary.path)
+    }
+
+    let sourceBackends = saneRoot.appendingPathComponent("lib/sane")
+    let destinationBackends = frameworksFolder.appendingPathComponent("sane")
+    try run("rsync", "-rt", "\(sourceBackends.path)/", "\(destinationBackends.path)/")
+
+    let backendFiles = try fileMgr.contentsOfDirectory(at: destinationBackends, includingPropertiesForKeys: nil)
+    for backend in backendFiles where backend.pathExtension == "so" {
+        try? run("install_name_tool", "-change", usbRoot.appendingPathComponent("lib/libusb-1.0.0.dylib").path,
+                "@loader_path/../libusb-1.0.dylib", backend.path)
+    }
+
+    let sourceConfig = URL(fileURLWithPath: "/opt/homebrew/etc/sane.d")
+    // Homebrew's sane.d entries are symlinks into the Cellar; dereference
+    // them so the app remains self-contained after it is moved.
+    try run("rsync", "-rtL", "\(sourceConfig.path)/", "\(etcFolder.path)/")
+
+    // Keep discovery focused on the connected USB scanner. Unrelated
+    // backends can require optional native libraries that are not bundled.
+    let bundledDllConfig = etcFolder.appendingPathComponent("dll.conf")
+    try "plustek\n".write(to: bundledDllConfig, atomically: true, encoding: .utf8)
 }
 
 try embedLibs()
