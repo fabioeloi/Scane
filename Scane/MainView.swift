@@ -17,6 +17,21 @@ struct MainView: View {
     
     @State var error: ErrorDefinition?
     @State var batchCount = 1
+    @State var optionFilter = ""
+
+    private var visibleOptions: [IScanOption] {
+        let query = optionFilter.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return manager.options.filter(\.isActive) }
+        return manager.options.filter { option in
+            option.isActive &&
+            (option.name.localizedCaseInsensitiveContains(query) ||
+             (option as? ScanOption<Bool>)?.title.localizedCaseInsensitiveContains(query) == true ||
+             (option as? ScanOption<Int>)?.title.localizedCaseInsensitiveContains(query) == true ||
+             (option as? ScanOption<Double>)?.title.localizedCaseInsensitiveContains(query) == true ||
+             (option as? ScanOption<String>)?.title.localizedCaseInsensitiveContains(query) == true ||
+             (option as? ScanButtonOption)?.title.localizedCaseInsensitiveContains(query) == true)
+        }
+    }
     
     func doInit() {
         Task {
@@ -112,26 +127,58 @@ struct MainView: View {
         NavigationView {
             
             // Left column
-            VStack {
+            VStack(spacing: 0) {
                 
                 if let deviceInfo = manager.deviceInfo {
-                    Text("\(deviceInfo.vendor) \(deviceInfo.model)").font(.headline).padding(.top)
+                    Text("\(deviceInfo.vendor) \(deviceInfo.model)")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 10)
                 }
                 
-                Form {
-                    ForEach(ScanOptionSection.allCases) { section in
-                        let sectionOptions = manager.options.filter { $0.isActive && $0.section == section }
-                        if !sectionOptions.isEmpty {
-                            Section(section.rawValue) {
-                                ForEach(sectionOptions, id: \.name) { option in
-                                    ScanOptionView(option: option, resetAction: { manager.reset(option: option) })
-                                }
-                            }
-                        }
+                HStack(spacing: 6) {
+                    TextField("Filter options", text: $optionFilter)
+                        .textFieldStyle(.roundedBorder)
+                    if !optionFilter.isEmpty {
+                        Button("Clear") { optionFilter = "" }
+                            .buttonStyle(.borderless)
                     }
                 }
+                .padding(.vertical, 8)
+
+                Divider()
+
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        ForEach(ScanOptionSection.allCases) { section in
+                            let sectionOptions = visibleOptions.filter { $0.section == section }
+                            if !sectionOptions.isEmpty {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(section.rawValue)
+                                        .font(.headline)
+                                        .foregroundColor(.secondary)
+                                    ForEach(sectionOptions, id: \.name) { option in
+                                        ScanOptionView(
+                                            option: option,
+                                            resetAction: { manager.reset(option: option) }
+                                        )
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                }
+                                .padding(.bottom, 4)
+                            }
+                        }
+                        if visibleOptions.isEmpty {
+                            Text("No active options match this filter.")
+                                .foregroundColor(.secondary)
+                                .padding(.vertical, 12)
+                        }
+                    }
+                    .padding(.vertical, 10)
+                }
                 .disabled(isActive)
-                .padding(.vertical)
+
+                Divider()
 
                 HStack {
                     TextField("Profile", text: $manager.profileName)
@@ -139,12 +186,14 @@ struct MainView: View {
                     Button("Load") { manager.loadProfile() }
                 }
                 .disabled(isActive)
+                .padding(.top, 8)
 
                 HStack {
                     Stepper("Pages: \(batchCount)", value: $batchCount, in: 1...100)
                     Button("Batch") { self.batchScan() }
                 }
                 .disabled(isActive)
+                .padding(.top, 6)
                 
                 HStack {
                     if manager.canPreview {
@@ -160,11 +209,10 @@ struct MainView: View {
                     }
                 }
                 .disabled(isActive)
-
-                Spacer()
+                .padding(.vertical, 8)
             }
             .padding(.horizontal)
-            .frame(minWidth: 300)
+            .frame(minWidth: 360, idealWidth: 400, maxWidth: 460)
 
             // Right panel
             ZStack {

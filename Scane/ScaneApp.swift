@@ -19,13 +19,14 @@ class ScaneAppDelegate: NSObject, NSApplicationDelegate {
         
         // Create the window and set the content view.
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false,
             content: MainView(manager: scanManager))
         
         window.title = "Scane"
+        window.minSize = NSSize(width: 900, height: 600)
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
         window.center()
