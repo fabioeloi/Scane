@@ -250,14 +250,20 @@ class ScanManager: ObservableObject {
         self.objectWillChange.send()
         self.roi_ = newRoi
 
-        Task { @SANEActor in
-            if let handle = self.handle {
-                do {
-                    try self.roiManager.setRoi(handle: handle, roi: newRoi)
-                }
-                catch {}
-            }
+        do {
+            try await applyRoi(newRoi)
         }
+        catch {
+            self.lastError = error.localizedDescription
+        }
+    }
+
+    @SANEActor
+    private func applyRoi(_ roi: CGRect) throws {
+        guard let handle = self.handle else {
+            throw ScaneError.failure
+        }
+        try roiManager.setRoi(handle: handle, roi: roi)
     }
     
     func scan(preview: Bool) async throws -> CGImage {
@@ -271,10 +277,6 @@ class ScanManager: ObservableObject {
         defer { self.isScanning = false }
 
         // If we're doing a preview scan, reset our ROI
-        if preview {
-            await updateRoi(newRoi: CGRect(x: 0.0, y: 0.0, width: 1.0, height: 1.0))
-        }
-        
         // If we support preview mode, set it now and reset resolution to lowest value
         var userSelectedResolution: SANEActionValue?
 
@@ -292,6 +294,12 @@ class ScanManager: ObservableObject {
             if var resolutionValue = resolutionOption.minimumPossibleValue {
                 try await resolutionValue.controlOption(handle: handle, index: resolutionOption.index, action: .setValue)
             }
+        }
+
+        if preview {
+            self.objectWillChange.send()
+            self.roi_ = CGRect(x: 0.0, y: 0.0, width: 1.0, height: 1.0)
+            try await applyRoi(self.roi_)
         }
 
         let image = try await self.doScan(preview: preview)
@@ -321,6 +329,12 @@ class ScanManager: ObservableObject {
         defer { memory.deallocate() }
 
         var done = false
+        var reachedEOF = false
+        defer {
+            if !reachedEOF {
+                try? saneCancel(handle: handle)
+            }
+        }
         
         let imageBuffer = ImageBuffer(param: params)
         
@@ -340,11 +354,10 @@ class ScanManager: ObservableObject {
             }
             else {
                 done = true
+                reachedEOF = true
             }
         }
-        
-        try saneCancel(handle: handle)
-        
+
         guard let image = imageBuffer.save() else {
             throw ScaneError.imageCreationFailed
         }
