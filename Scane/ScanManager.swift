@@ -152,9 +152,9 @@ class ScanManager: ObservableObject {
 
     func activateButton(index: Int) async {
         do {
-            guard let handle = self.handle else { throw ScaneError.failure }
+            guard let handle = await self.handle else { throw ScaneError.failure }
             var ignored = 0
-            try saneControlOption(handle: handle, n: index, action: .setValue, value: &ignored)
+            try await saneControlOption(handle: handle, n: index, action: .setValue, value: &ignored)
         }
         catch {
             self.lastError = error.localizedDescription
@@ -164,7 +164,7 @@ class ScanManager: ObservableObject {
     func reset(option: IScanOption) {
         Task {
             do {
-                guard let handle = self.handle else { throw ScaneError.failure }
+                guard let handle = await self.handle else { throw ScaneError.failure }
                 try await option.reset(handle: handle)
             }
             catch {
@@ -187,7 +187,7 @@ class ScanManager: ObservableObject {
         }
         Task {
             do {
-                guard let handle = self.handle else { throw ScaneError.failure }
+                guard let handle = await self.handle else { throw ScaneError.failure }
                 for option in options {
                     if let value = values[option.name] {
                         try await option.apply(serializedValue: value, handle: handle)

@@ -171,7 +171,7 @@ class ScanOption<T: ScanOptionValue>: IScanOption {
 
     override func reset(handle: SANEHandle) async throws {
         var value = self.value_
-        try saneControlOption(handle: handle, n: index, action: .setAuto, value: &value)
+        try await saneControlOption(handle: handle, n: index, action: .setAuto, value: &value)
         try await update(handle: handle, updateDescriptor: false)
     }
 
@@ -195,7 +195,7 @@ class ScanOption<T: ScanOptionValue>: IScanOption {
         }
         guard let converted else { return }
         var value = converted
-        try saneControlOption(handle: handle, n: index, action: .setValue, value: &value)
+        try await saneControlOption(handle: handle, n: index, action: .setValue, value: &value)
         try await update(handle: handle, updateDescriptor: false)
     }
 }

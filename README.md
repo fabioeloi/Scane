@@ -13,6 +13,24 @@ The fork deliberately reports only capabilities supplied by the SANE backend.
 It does not claim true 48-bit capture, infrared dust removal, or multi-exposure
 unless the connected backend explicitly exposes and supports those features.
 
+### Building with Xcode 27
+
+Open `Scane.xcodeproj` in Xcode or build the unsigned Debug app from Terminal:
+
+```sh
+xcodebuild -project Scane.xcodeproj \
+  -scheme Scane \
+  -configuration Debug \
+  -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath build-final \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
+  build
+```
+
+The project targets macOS 12.0 or newer. The resulting app is
+`build-final/Build/Products/Debug/Scane.app`.
+
 Did Apple unceremoniously drop support for your scanner?  Did the manufacturer stop updating its own drivers?  Don't dump that old thing in the local watershed, Scane will let you continue using your beloved device for many years to come.  Maybe!
 
 ![Screenshot](./Docs/Screenshot.png)
