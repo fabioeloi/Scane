@@ -90,6 +90,7 @@ struct ScanOptionView : View {
 
     @ObservedObject
     var option: IScanOption
+    let resetAction: () -> Void
     
     var body: some View {
 
@@ -123,6 +124,19 @@ struct ScanOptionView : View {
                 else {
                     ScanOptionDoubleView(option: option)
                 }
+            }
+
+            if let option = self.option as? ScanButtonOption {
+                Button(option.title, action: option.activate)
+                if !option.desc.isEmpty {
+                    Text(option.desc).font(.caption).foregroundColor(.secondary)
+                }
+            }
+
+            if !(self.option is ScanButtonOption) {
+                Button("Reset", action: resetAction)
+                    .buttonStyle(.borderless)
+                    .foregroundColor(.secondary)
             }
         }
     }

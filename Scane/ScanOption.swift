@@ -66,17 +66,31 @@ extension String: ScanOptionValue {
 class IScanOption: ObservableObject {
     let name: String
     let index: Int
+    let section: ScanOptionSection
     var isActive: Bool { true }
 
     func update(handle: SANEHandle, updateDescriptor: Bool) async throws {}
+    func reset(handle: SANEHandle) async throws {}
+    var serializedValue: String? { nil }
+    func apply(serializedValue: String, handle: SANEHandle) async throws {}
 
     var userSelectedValue: SANEActionValue { 0 }
     var minimumPossibleValue: SANEActionValue? { nil }
-    
-    fileprivate init(name: String, index: Int) {
+
+    fileprivate init(name: String, index: Int, section: ScanOptionSection) {
         self.name =  name
         self.index = index
+        self.section = section
     }
+}
+
+enum ScanOptionSection: String, CaseIterable, Identifiable {
+    case basic = "Basic"
+    case geometry = "Geometry"
+    case advanced = "Advanced"
+    case calibration = "Calibration / Device"
+
+    var id: String { rawValue }
 }
 
 @MainActor
@@ -108,13 +122,13 @@ class ScanOption<T: ScanOptionValue>: IScanOption {
     private var value_: T
     private weak var scanManager: ScanManager?
 
-    init(descriptor: SANEOptionDescriptor, index: Int, scanManager: ScanManager, initialVale: T = T()) {
+    init(descriptor: SANEOptionDescriptor, index: Int, section: ScanOptionSection, scanManager: ScanManager, initialVale: T = T()) {
         self.descriptor = descriptor
         self.title = descriptor.title
         self.options = T.getOptions(for: descriptor)
         self.value_ = initialVale
         self.scanManager = scanManager
-        super.init(name: descriptor.name, index: index)
+        super.init(name: descriptor.name, index: index, section: section)
     }
     
     override var userSelectedValue: SANEActionValue {
@@ -154,5 +168,56 @@ class ScanOption<T: ScanOptionValue>: IScanOption {
             self.descriptor = descriptor
         }
     }
+
+    override func reset(handle: SANEHandle) async throws {
+        var value = self.value_
+        try saneControlOption(handle: handle, n: index, action: .setAuto, value: &value)
+        try await update(handle: handle, updateDescriptor: false)
+    }
+
+    override var serializedValue: String? {
+        String(describing: value_)
+    }
+
+    override func apply(serializedValue: String, handle: SANEHandle) async throws {
+        let converted: T?
+        switch T.self {
+        case is Bool.Type:
+            converted = (serializedValue as NSString).boolValue as? T
+        case is Int.Type:
+            converted = Int(serializedValue) as? T
+        case is Double.Type:
+            converted = Double(serializedValue) as? T
+        case is String.Type:
+            converted = serializedValue as? T
+        default:
+            converted = nil
+        }
+        guard let converted else { return }
+        var value = converted
+        try saneControlOption(handle: handle, n: index, action: .setValue, value: &value)
+        try await update(handle: handle, updateDescriptor: false)
+    }
 }
 
+@MainActor
+final class ScanButtonOption: IScanOption {
+    let title: String
+    let desc: String
+    private weak var scanManager: ScanManager?
+
+    init(descriptor: SANEOptionDescriptor, index: Int, section: ScanOptionSection, scanManager: ScanManager) {
+        self.title = descriptor.title
+        self.desc = descriptor.desc
+        self.scanManager = scanManager
+        super.init(name: descriptor.name, index: index, section: section)
+    }
+
+    override var isActive: Bool { true }
+
+    func activate() {
+        Task {
+            await scanManager?.activateButton(index: index)
+        }
+    }
+}

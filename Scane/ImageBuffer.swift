@@ -39,11 +39,13 @@ class ImageBuffer {
     private var imageCurrent: UnsafeMutablePointer<UInt8>
 
     private var param: SANEParameters
+    private let sampleBytes: Int
 
     init(param: SANEParameters) {
         self.param = param
 
-        let imageBytesPerSample = param.format.bytesPerSample * param.depth / 8
+        sampleBytes = max(1, (param.depth + 7) / 8)
+        let imageBytesPerSample = param.format == .rgb ? 4 * sampleBytes : sampleBytes
         
         scanBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: param.bytesPerLine * param.lines)
         scanCurrent = scanBuffer
@@ -67,20 +69,20 @@ class ImageBuffer {
             if param.format == .rgb {
                 
                 // Write alpha values
-                imageCurrent.update(repeating: 255, count: param.pixelsPerLine * param.depth / 2)
+                imageCurrent.update(repeating: 255, count: param.pixelsPerLine * sampleBytes)
                 
                 // Write each pixel
                 var scanPixel = scanCurrent
                 for _ in 0..<param.pixelsPerLine {
-                    imageCurrent.update(from: scanPixel, count: 3 * param.depth / 8)
-                    imageCurrent += (4 * param.depth / 8)
-                    scanPixel += (3 * param.depth / 8)
+                    imageCurrent.update(from: scanPixel, count: 3 * sampleBytes)
+                    imageCurrent += (4 * sampleBytes)
+                    scanPixel += (3 * sampleBytes)
                 }
             }
             
             // Grey/red/green/blue line: copy all pixels in one go
             else {
-                let toCopy = param.pixelsPerLine * param.depth / 8
+                let toCopy = param.pixelsPerLine * sampleBytes
                 imageCurrent.update(from: scanCurrent, count: toCopy)
                 imageCurrent += toCopy
             }
@@ -94,8 +96,8 @@ class ImageBuffer {
         let memory = UnsafeMutableRawPointer(self.imageBuffer)
         
         let bytesPerRow = param.format == .rgb ?
-            (param.pixelsPerLine * param.depth / 2) :
-            (param.pixelsPerLine * param.depth / 8)
+            (param.pixelsPerLine * 4 * sampleBytes) :
+            (param.pixelsPerLine * sampleBytes)
 
         let space = param.format == .gray ?
             CGColorSpaceCreateDeviceGray() :
@@ -105,7 +107,8 @@ class ImageBuffer {
             CGImageAlphaInfo.noneSkipLast.rawValue :
             CGImageAlphaInfo.none.rawValue
         
-        if param.depth == 16 {
+        let containerDepth = param.depth > 8 ? 16 : 8
+        if containerDepth == 16 {
             imageInfo |= CGImageByteOrderInfo.order16Little.rawValue
         }
 
@@ -113,7 +116,7 @@ class ImageBuffer {
             data: memory,
             width: param.pixelsPerLine,
             height: param.lines,
-            bitsPerComponent: param.depth,
+            bitsPerComponent: containerDepth,
             bytesPerRow: bytesPerRow,
             space: space,
             bitmapInfo: imageInfo) {

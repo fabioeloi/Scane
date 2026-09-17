@@ -24,6 +24,8 @@ class ScanManager: ObservableObject {
     @Published var canPreview = false
     @Published var canSetRoi = false
     @Published var options = Array<IScanOption>()
+    @Published var lastError: String?
+    @Published var profileName = "HR7X"
     
     @Published var scanProgress: Double = 0
 
@@ -51,19 +53,15 @@ class ScanManager: ObservableObject {
         
         var scanOptions: [IScanOption] = []
 
-        var isInAdvancedGroup = false
+        var currentSection = ScanOptionSection.basic
         for option in options {
             let descriptor = option.descriptor
             
-            // Skip advanced settings
             if descriptor.type == .group {
-                isInAdvancedGroup = descriptor.cap.contains(.advanced)
-            }
-            
-            if isInAdvancedGroup || descriptor.cap.contains(.advanced) {
+                currentSection = section(for: descriptor, fallback: currentSection)
                 continue
             }
-            
+
             if descriptor.name == SANEWellKnownOptions.preview.rawValue {
                 canPreview = true
                 previewOptionIdx = option.index
@@ -74,16 +72,19 @@ class ScanManager: ObservableObject {
 
             switch descriptor.type {
             case .bool:
-                scanOption = ScanOption<Bool>(descriptor: descriptor, index: option.index, scanManager: self)
+                scanOption = ScanOption<Bool>(descriptor: descriptor, index: option.index, section: section(for: descriptor, fallback: currentSection), scanManager: self)
 
             case .int:
-                scanOption = ScanOption<Int>(descriptor: descriptor, index: option.index, scanManager: self)
+                scanOption = ScanOption<Int>(descriptor: descriptor, index: option.index, section: section(for: descriptor, fallback: currentSection), scanManager: self)
 
             case .fixed:
-                scanOption = ScanOption<Double>(descriptor: descriptor, index: option.index, scanManager: self)
+                scanOption = ScanOption<Double>(descriptor: descriptor, index: option.index, section: section(for: descriptor, fallback: currentSection), scanManager: self)
 
             case .string:
-                scanOption = ScanOption<String>(descriptor: descriptor, index: option.index, scanManager: self)
+                scanOption = ScanOption<String>(descriptor: descriptor, index: option.index, section: section(for: descriptor, fallback: currentSection), scanManager: self)
+
+            case .button:
+                scanOption = ScanButtonOption(descriptor: descriptor, index: option.index, section: section(for: descriptor, fallback: currentSection), scanManager: self)
             default: break
             }
             
@@ -145,8 +146,73 @@ class ScanManager: ObservableObject {
             try await self.doSetValue(options: self.options, index: index, value: value)
         }
         catch {
-            
+            self.lastError = error.localizedDescription
         }
+    }
+
+    func activateButton(index: Int) async {
+        do {
+            guard let handle = self.handle else { throw ScaneError.failure }
+            var ignored = 0
+            try saneControlOption(handle: handle, n: index, action: .setValue, value: &ignored)
+        }
+        catch {
+            self.lastError = error.localizedDescription
+        }
+    }
+
+    func reset(option: IScanOption) {
+        Task {
+            do {
+                guard let handle = self.handle else { throw ScaneError.failure }
+                try await option.reset(handle: handle)
+            }
+            catch {
+                self.lastError = error.localizedDescription
+            }
+        }
+    }
+
+    func saveProfile() {
+        let values = Dictionary(uniqueKeysWithValues: options.compactMap { option in
+            option.serializedValue.map { (option.name, $0) }
+        })
+        UserDefaults.standard.set(values, forKey: "Scane.profile.\(profileName)")
+    }
+
+    func loadProfile() {
+        guard let values = UserDefaults.standard.dictionary(forKey: "Scane.profile.\(profileName)") as? [String: String] else {
+            lastError = "No saved profile named \(profileName)."
+            return
+        }
+        Task {
+            do {
+                guard let handle = self.handle else { throw ScaneError.failure }
+                for option in options {
+                    if let value = values[option.name] {
+                        try await option.apply(serializedValue: value, handle: handle)
+                    }
+                }
+            }
+            catch {
+                self.lastError = error.localizedDescription
+            }
+        }
+    }
+
+    private func section(for descriptor: SANEOptionDescriptor, fallback: ScanOptionSection) -> ScanOptionSection {
+        if descriptor.cap.contains(.advanced) {
+            return .advanced
+        }
+        let name = descriptor.name.lowercased()
+        if name.contains("calib") || name.contains("lamp") || name.contains("warmup") || name.contains("gain") || name.contains("offset") {
+            return .calibration
+        }
+        if name == SANEWellKnownOptions.tlX.rawValue || name == SANEWellKnownOptions.tlY.rawValue ||
+            name == SANEWellKnownOptions.brX.rawValue || name == SANEWellKnownOptions.brY.rawValue {
+            return .geometry
+        }
+        return fallback
     }
     
     @SANEActor

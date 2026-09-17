@@ -10,11 +10,13 @@ import SwiftUI
 enum SaveImageFormat: String {
     case jpeg = "JPEG"
     case png = "PNG"
+    case tiff = "TIFF"
     
     var fileExtension: String {
         switch self {
         case .jpeg: return "jpg"
         case .png: return "png"
+        case .tiff: return "tiff"
         }
     }
 }
@@ -28,7 +30,7 @@ struct SaveImageFormatView: View {
 
     @ObservedObject var options: SaveImageFormatOptions
     
-    let formats: [SaveImageFormat] = [ .png, .jpeg ]
+    let formats: [SaveImageFormat] = [ .tiff, .png, .jpeg ]
 
     var body: some View {
 

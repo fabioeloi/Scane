@@ -16,6 +16,7 @@ struct MainView: View {
     var previewImage: CGImage?
     
     @State var error: ErrorDefinition?
+    @State var batchCount = 1
     
     func doInit() {
         Task {
@@ -80,6 +81,30 @@ struct MainView: View {
         }
     }
 
+    func batchScan() {
+        let count = max(1, batchCount)
+        Task {
+            for page in 1...count {
+                do {
+                    let image = try await manager.scan(preview: false)
+                    let view = ScannedImageView(image: image)
+                    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
+                                          styleMask: [.titled, .closable],
+                                          backing: .buffered,
+                                          defer: false,
+                                          content: view)
+                    window.title = "Scan \(page) of \(count)"
+                    window.makeKeyAndOrderFront(nil)
+                    window.center()
+                }
+                catch {
+                    self.error = ErrorDefinition(error, "Batch scan failed on page \(page)")
+                    break
+                }
+            }
+        }
+    }
+
     var body: some View {
         
         let isActive = manager.isScanning || manager.isLoading
@@ -94,12 +119,32 @@ struct MainView: View {
                 }
                 
                 Form {
-                    ForEach(manager.options.filter(\.isActive), id: \.name) { option in
-                        ScanOptionView(option: option)
+                    ForEach(ScanOptionSection.allCases) { section in
+                        let sectionOptions = manager.options.filter { $0.isActive && $0.section == section }
+                        if !sectionOptions.isEmpty {
+                            Section(section.rawValue) {
+                                ForEach(sectionOptions, id: \.name) { option in
+                                    ScanOptionView(option: option, resetAction: { manager.reset(option: option) })
+                                }
+                            }
+                        }
                     }
                 }
                 .disabled(isActive)
                 .padding(.vertical)
+
+                HStack {
+                    TextField("Profile", text: $manager.profileName)
+                    Button("Save") { manager.saveProfile() }
+                    Button("Load") { manager.loadProfile() }
+                }
+                .disabled(isActive)
+
+                HStack {
+                    Stepper("Pages: \(batchCount)", value: $batchCount, in: 1...100)
+                    Button("Batch") { self.batchScan() }
+                }
+                .disabled(isActive)
                 
                 HStack {
                     if manager.canPreview {
@@ -140,5 +185,13 @@ struct MainView: View {
         }
         .onAppear(perform: { doInit() })
         .alert(item: $error, content: { error in error.toAlert() })
+        .alert("Scanner error", isPresented: Binding(
+            get: { manager.lastError != nil },
+            set: { if !$0 { manager.lastError = nil } }
+        )) {
+            Button("OK") { manager.lastError = nil }
+        } message: {
+            Text(manager.lastError ?? "")
+        }
     }
 }

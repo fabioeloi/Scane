@@ -111,7 +111,7 @@ public enum SANEUnit {
         case libsane.SANE_UNIT_NONE:
             self = .none
         case libsane.SANE_UNIT_PIXEL:
-            self = .none
+            self = .pixel
         case libsane.SANE_UNIT_BIT:
             self = .bit
         case libsane.SANE_UNIT_MM:

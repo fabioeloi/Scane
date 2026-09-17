@@ -62,6 +62,8 @@ struct ScannedImageView: View {
             imageData = imageRep.representation(using: .png, properties: [:])
         case .jpeg:
             imageData = imageRep.representation(using: .jpeg, properties: [.compressionFactor: options.jpegQuality])
+        case .tiff:
+            imageData = imageRep.representation(using: .tiff, properties: [:])
         }
         
         
